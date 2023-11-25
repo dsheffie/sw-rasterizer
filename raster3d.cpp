@@ -1,4 +1,4 @@
-//[header]
+//[heaeder]
 // A practical implementation of the rasterization algorithm.
 //[/header]
 //[compile]
@@ -30,6 +30,7 @@
 #include "geometry.h"
 #include <fstream>
 #include <chrono>
+#include <cassert>
 
 #include "cow.h"
 
@@ -191,7 +192,7 @@ int main(int argc, char **argv)
     // [comment]
     // Outer loop
     // [/comment]
-#pragma omp parallel for
+    //#pragma omp parallel for
     for (uint32_t i = 0; i < ntris; ++i) {
         const Vec3f &v0 = vertices[nvertices[i * 3]];
         const Vec3f &v1 = vertices[nvertices[i * 3 + 1]];
@@ -248,25 +249,23 @@ int main(int argc, char **argv)
 	  uint32_t y = y0 + yy;
 
 	  Vec3f pp(x0 + 0.5, y + 0.5, 0);
-	  float w0_x0 = edgeFunction(v1Raster, v2Raster, pp);
-	  float w0_dy = v2Raster[1] - v1Raster[1];
 	  
-	  float w1_x0 = edgeFunction(v2Raster, v0Raster, pp);
-	  float w1_dy = v0Raster[1] - v2Raster[1];
+	  float l0_dy = v2Raster[1] - v1Raster[1];
+	  float l1_dy = v0Raster[1] - v2Raster[1];
+	  float l2_dy = v1Raster[1] - v0Raster[1];
 	  
-	  float w2_x0 = edgeFunction(v0Raster, v1Raster, pp);
-	  float w2_dy = v1Raster[1] - v0Raster[1];
+	  float l0_dx = v2Raster[0] - v1Raster[0];
+	  float l1_dx = v0Raster[0] - v2Raster[0];
+	  float l2_dx = v1Raster[0] - v0Raster[0];
 
-	  float w0_00 = w0_x0, w1_00 = w1_x0, w2_00 = w2_x0;
+	  float w0_x0 = (pp[0]-v1Raster[0])*l0_dy - (pp[1]-v1Raster[1])*l0_dx;
+	  float w1_x0 = (pp[0]-v2Raster[0])*l1_dy - (pp[1]-v2Raster[1])*l1_dx;
+	  float w2_x0 = (pp[0]-v0Raster[0])*l2_dy - (pp[1]-v0Raster[1])*l2_dx;
+
+	  float w0 = w0_x0, w1 = w1_x0, w2 = w2_x0;
 	  
 	  for (uint32_t xx = 0; xx <= xlen; xx++) {
 	    uint32_t x = x0 + xx;
-	    
-	    // Vec3f pixelSample(x + 0.5, y + 0.5, 0);
-	    
-	    //float w0_00 = edgeFunction(v1Raster, v2Raster, pixelSample);
-	    //float w1_00 = edgeFunction(v2Raster, v0Raster, pixelSample);
-	    //float w2_00 = edgeFunction(v0Raster, v1Raster, pixelSample);
 	    
 	    auto draw = [&] (float w0, float w1, float w2) {
 	      if (!(w0 >= 0 && w1 >= 0 && w2 >= 0))
@@ -346,10 +345,11 @@ int main(int argc, char **argv)
 	      frameBuffer[y * imageWidth + x].z = nDotView * 255;
 	    };
 	    
-	    draw(w0_00, w1_00, w2_00);
-	    w0_00 += w0_dy;
-	    w1_00 += w1_dy;
-	    w2_00 += w2_dy;
+	    draw(w0, w1, w2);
+	    
+	    w0 += l0_dy;
+	    w1 += l1_dy;
+	    w2 += l2_dy;
 	  }
         }
     }
