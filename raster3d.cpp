@@ -193,6 +193,7 @@ int main(int argc, char **argv)
     // Outer loop
     // [/comment]
     //#pragma omp parallel for
+    uint64_t n_tests = 0, n_passed_area = 0, n_passed_z = 0;
     for (uint32_t i = 0; i < ntris; ++i) {
         const Vec3f &v0 = vertices[nvertices[i * 3]];
         const Vec3f &v1 = vertices[nvertices[i * 3 + 1]];
@@ -262,21 +263,23 @@ int main(int argc, char **argv)
 	  float w1_x0 = (pp[0]-v2Raster[0])*l1_dy - (pp[1]-v2Raster[1])*l1_dx;
 	  float w2_x0 = (pp[0]-v0Raster[0])*l2_dy - (pp[1]-v0Raster[1])*l2_dx;
 
-	  float w0 = w0_x0, w1 = w1_x0, w2 = w2_x0;
+	  float w0_ = w0_x0, w1_ = w1_x0, w2_ = w2_x0;
 	  
 	  for (uint32_t xx = 0; xx <= xlen; xx++) {
 	    uint32_t x = x0 + xx;
+	    float w0 = w0_, w1 = w1_, w2 = w2_;
+	    ++n_tests;
 	    
-	    auto draw = [&] (float w0, float w1, float w2) {
+	    if ((w0 >= 0 && w1 >= 0 && w2 >= 0)) {
+	      ++n_passed_area;
 	      float recip_area = 1.0f / area;
 	      w0 *= recip_area;
 	      w1 *= recip_area;
 	      w2 *= recip_area;
+
 	      float oneOverZ = v0Raster.z * w0 + v1Raster.z * w1 + v2Raster.z * w2;
-	      float z = 1 / oneOverZ;
-	      // [comment]
-	      // Depth-buffer test
-	      // [/comment]
+	      float z = 1.0f / oneOverZ;
+
 	      bool failedZ = false;
 	      uint32_t uNewZ = *reinterpret_cast<uint32_t*>(&z);
 		    
@@ -291,67 +294,67 @@ int main(int argc, char **argv)
 		  break;
 		}
 	      }
-	
-	      Vec2f st = st0 * w0 + st1 * w1 + st2 * w2;
+	      
+	      if(not(failedZ)) {
+		n_passed_z++;
+		Vec2f st = st0 * w0 + st1 * w1 + st2 * w2;
+		st *= z;
+		// [comment]
+		// If you need to compute the actual position of the shaded
+		// point in camera space. Proceed like with the other vertex attribute.
+		// Divide the point coordinates by the vertex z-coordinate then
+		// interpolate using barycentric coordinates and finally multiply
+		// by sample depth.
+		// [/comment]
+		Vec3f v0Cam, v1Cam, v2Cam;
+		worldToCamera.multVecMatrix(v0, v0Cam);
+		worldToCamera.multVecMatrix(v1, v1Cam);
+		worldToCamera.multVecMatrix(v2, v2Cam);
                         
-	      st *= z;
+		float px = (v0Cam.x/-v0Cam.z) * w0 + (v1Cam.x/-v1Cam.z) * w1 + (v2Cam.x/-v2Cam.z) * w2;
+		float py = (v0Cam.y/-v0Cam.z) * w0 + (v1Cam.y/-v1Cam.z) * w1 + (v2Cam.y/-v2Cam.z) * w2;
                         
-	      // [comment]
-	      // If you need to compute the actual position of the shaded
-	      // point in camera space. Proceed like with the other vertex attribute.
-	      // Divide the point coordinates by the vertex z-coordinate then
-	      // interpolate using barycentric coordinates and finally multiply
-	      // by sample depth.
-	      // [/comment]
-	      Vec3f v0Cam, v1Cam, v2Cam;
-	      worldToCamera.multVecMatrix(v0, v0Cam);
-	      worldToCamera.multVecMatrix(v1, v1Cam);
-	      worldToCamera.multVecMatrix(v2, v2Cam);
+		Vec3f pt(px * z, py * z, -z); // pt is in camera space
                         
-	      float px = (v0Cam.x/-v0Cam.z) * w0 + (v1Cam.x/-v1Cam.z) * w1 + (v2Cam.x/-v2Cam.z) * w2;
-	      float py = (v0Cam.y/-v0Cam.z) * w0 + (v1Cam.y/-v1Cam.z) * w1 + (v2Cam.y/-v2Cam.z) * w2;
+		// [comment]
+		// Compute the face normal which is used for a simple facing ratio.
+		// Keep in mind that we are doing all calculation in camera space.
+		// Thus the view direction can be computed as the point on the object
+		// in camera space minus Vec3f(0), the position of the camera in camera
+		// space.
+		// [/comment]
+		Vec3f n = (v1Cam - v0Cam).crossProduct(v2Cam - v0Cam);
+		n.normalize();
+		Vec3f viewDirection = -pt;
+		viewDirection.normalize();
                         
-	      Vec3f pt(px * z, py * z, -z); // pt is in camera space
+		float nDotView =  std::max(0.f, n.dotProduct(viewDirection));
                         
-	      // [comment]
-	      // Compute the face normal which is used for a simple facing ratio.
-	      // Keep in mind that we are doing all calculation in camera space.
-	      // Thus the view direction can be computed as the point on the object
-	      // in camera space minus Vec3f(0), the position of the camera in camera
-	      // space.
-	      // [/comment]
-	      Vec3f n = (v1Cam - v0Cam).crossProduct(v2Cam - v0Cam);
-	      n.normalize();
-	      Vec3f viewDirection = -pt;
-	      viewDirection.normalize();
-                        
-	      float nDotView =  std::max(0.f, n.dotProduct(viewDirection));
-                        
-	      // [comment]
-	      // The final color is the reuslt of the faction ration multiplied by the
-	      // checkerboard pattern.
-	      // [/comment]
-	      const int M = 10;
-	      float checker = (fmod(st.x * M, 1.0) > 0.5) ^ (fmod(st.y * M, 1.0) < 0.5);
-	      float c = 0.3 * (1 - checker) + 0.7 * checker;
-	      nDotView *= c;
-	      if(not(failedZ)) {	      
+		// [comment]
+		// The final color is the reuslt of the faction ration multiplied by the
+		// checkerboard pattern.
+		// [/comment]
+		const int M = 10;
+		float checker = (fmod(st.x * M, 1.0) > 0.5) ^ (fmod(st.y * M, 1.0) < 0.5);
+		float c = 0.3 * (1 - checker) + 0.7 * checker;
+		nDotView *= c;
+
 		frameBuffer[y * imageWidth + x].x = nDotView * 255;
 		frameBuffer[y * imageWidth + x].y = nDotView * 255;
 		frameBuffer[y * imageWidth + x].z = nDotView * 255;
 	      }
-	    };
-
-	    if ((w0 >= 0 && w1 >= 0 && w2 >= 0)) {
-	      draw(w0, w1, w2);
 	    }
 	    
-	    w0 += l0_dy;
-	    w1 += l1_dy;
-	    w2 += l2_dy;
+	    w0_ += l0_dy;
+	    w1_ += l1_dy;
+	    w2_ += l2_dy;
 	  }
         }
     }
+
+    std::cout << "n_tests        = " << n_tests << "\n";
+    std::cout << "n_passed_area  = " << n_passed_area << "\n";
+    std::cout << "n_passed_z     = " << n_passed_z << "\n";
     
     auto t_end = std::chrono::high_resolution_clock::now();
     auto passedTime = std::chrono::duration<double, std::milli>(t_end - t_start).count();
