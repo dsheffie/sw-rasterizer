@@ -27,15 +27,32 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 //[/ignore]
 
-#include "geometry.h"
+
 #include <fstream>
 #include <chrono>
 #include <cassert>
 
+#include <SDL2/SDL.h>
+#include <unistd.h>
+
+#include "geometry.h"
 #include "cow.h"
 
 static const float inchToMm = 25.4;
 enum FitResolutionGate { kFill = 0, kOverscan };
+
+const uint32_t imageWidth = 640*2;
+const uint32_t imageHeight = 480*2;
+
+static SDL_Window *sdlwin = nullptr;
+static SDL_Surface *sdlscr = nullptr;
+
+struct pixel_t {
+  uint8_t r;
+  uint8_t g;
+  uint8_t b;
+  uint8_t a;
+};
 
 //[comment]
 // Compute screen coordinates based on a physically-based camera model
@@ -144,8 +161,6 @@ float edgeFunction(const Vec3f &a, const Vec3f &b, const Vec3f &c) {
   return (c[0] - a[0]) * dy - (c[1] - a[1]) * dx;
 }
 
-const uint32_t imageWidth = 640*5;
-const uint32_t imageHeight = 480*5;
 
 const Matrix44f worldToCamera = {
   0.707107, -0.331295, 0.624695, 0,
@@ -165,6 +180,17 @@ float filmApertureHeight = 0.735;
 
 int main(int argc, char **argv)
 {
+
+  sdlwin = SDL_CreateWindow("FRAMEBUFFER",
+			    SDL_WINDOWPOS_UNDEFINED,
+			    SDL_WINDOWPOS_UNDEFINED,
+			    imageWidth,
+			    imageHeight,
+			    SDL_WINDOW_SHOWN);
+  assert(sdlwin != nullptr);
+  sdlscr = SDL_GetWindowSurface(sdlwin);
+  assert(sdlscr);
+
     Matrix44f cameraToWorld = worldToCamera.inverse();
 
     static_assert(ntris == 3156, "huh");
@@ -194,6 +220,9 @@ int main(int argc, char **argv)
     // [/comment]
     //#pragma omp parallel for
     uint64_t n_tests = 0, n_passed_area = 0, n_passed_z = 0;
+    SDL_LockSurface(sdlscr);
+    pixel_t *pxls = reinterpret_cast<pixel_t*>(sdlscr->pixels);
+    
     for (uint32_t i = 0; i < ntris; ++i) {
         const Vec3f &v0 = vertices[nvertices[i * 3]];
         const Vec3f &v1 = vertices[nvertices[i * 3 + 1]];
@@ -339,9 +368,15 @@ int main(int argc, char **argv)
 		float c = 0.3 * (1 - checker) + 0.7 * checker;
 		nDotView *= c;
 
+		
 		frameBuffer[y * imageWidth + x].x = nDotView * 255;
 		frameBuffer[y * imageWidth + x].y = nDotView * 255;
 		frameBuffer[y * imageWidth + x].z = nDotView * 255;
+
+		
+		pxls[y * imageWidth + x].r = nDotView * 255;
+		pxls[y * imageWidth + x].g = nDotView * 255;
+		pxls[y * imageWidth + x].b = nDotView * 255;		
 	      }
 	    }
 	    
@@ -351,7 +386,9 @@ int main(int argc, char **argv)
 	  }
         }
     }
-
+    SDL_UnlockSurface(sdlscr);
+    SDL_UpdateWindowSurface(sdlwin);
+    
     std::cout << "n_tests        = " << n_tests << "\n";
     std::cout << "n_passed_area  = " << n_passed_area << "\n";
     std::cout << "n_passed_z     = " << n_passed_z << "\n";
@@ -360,6 +397,7 @@ int main(int argc, char **argv)
     auto passedTime = std::chrono::duration<double, std::milli>(t_end - t_start).count();
     std::cerr << "Wall passed time:  " << passedTime << " ms" << std::endl;
     
+    sleep(1);
     // [comment]
     // Store the result of the framebuffer to a PPM file (Photoshop reads PPM files).
     // [/comment]
@@ -371,6 +409,10 @@ int main(int argc, char **argv)
     
     delete [] frameBuffer;
     delete [] depthBuffer;
+
+
+    SDL_DestroyWindow(sdlwin);
+    SDL_Quit();
     
     return 0;
 }

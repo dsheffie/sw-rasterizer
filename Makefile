@@ -4,7 +4,7 @@ CXXFLAGS = -MMD -O3 -std=c++11 -g -fopenmp
 CXX = g++
 
 all: $(OBJ)
-	$(CXX) $(CXXFLAGS) $(OBJ) -o $(EXE) -lm
+	$(CXX) $(CXXFLAGS) $(OBJ) -o $(EXE) -lm -lSDL2
 
 %.o : %.cpp
 	$(CXX) $(CXXFLAGS) -c $<
