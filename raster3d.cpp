@@ -268,8 +268,6 @@ int main(int argc, char **argv)
 	    uint32_t x = x0 + xx;
 	    
 	    auto draw = [&] (float w0, float w1, float w2) {
-	      if (!(w0 >= 0 && w1 >= 0 && w2 >= 0))
-		return;
 	      float recip_area = 1.0f / area;
 	      w0 *= recip_area;
 	      w1 *= recip_area;
@@ -293,10 +291,7 @@ int main(int argc, char **argv)
 		  break;
 		}
 	      }
-	      if(failedZ) {
-		return;
-	      }
-
+	
 	      Vec2f st = st0 * w0 + st1 * w1 + st2 * w2;
                         
 	      st *= z;
@@ -340,12 +335,16 @@ int main(int argc, char **argv)
 	      float checker = (fmod(st.x * M, 1.0) > 0.5) ^ (fmod(st.y * M, 1.0) < 0.5);
 	      float c = 0.3 * (1 - checker) + 0.7 * checker;
 	      nDotView *= c;
-	      frameBuffer[y * imageWidth + x].x = nDotView * 255;
-	      frameBuffer[y * imageWidth + x].y = nDotView * 255;
-	      frameBuffer[y * imageWidth + x].z = nDotView * 255;
+	      if(not(failedZ)) {	      
+		frameBuffer[y * imageWidth + x].x = nDotView * 255;
+		frameBuffer[y * imageWidth + x].y = nDotView * 255;
+		frameBuffer[y * imageWidth + x].z = nDotView * 255;
+	      }
 	    };
-	    
-	    draw(w0, w1, w2);
+
+	    if ((w0 >= 0 && w1 >= 0 && w2 >= 0)) {
+	      draw(w0, w1, w2);
+	    }
 	    
 	    w0 += l0_dy;
 	    w1 += l1_dy;
