@@ -215,6 +215,7 @@ int main(int argc, char **argv)
     while(n_frames < 30) {
       n_tests  = n_passed_area = n_passed_z = 0;
       n_frames++;
+      
       for (uint32_t i = 0; i < imageWidth * imageHeight; ++i) {
 	depthBuffer[i] = farClippingPLane;
       }
@@ -275,11 +276,22 @@ int main(int argc, char **argv)
         uint32_t y0 = std::max(int32_t(0), (int32_t)(std::floor(ymin)));
         uint32_t y1 = std::min(int32_t(imageHeight) - 1, (int32_t)(std::floor(ymax)));
 
-        float area = edgeFunction(v0Raster, v1Raster, v2Raster);
-        
-        // [comment]
-        // Inner loop
-        // [/comment]
+	float recip_area = 1.0f / edgeFunction(v0Raster, v1Raster, v2Raster);
+
+	Vec3f v0Cam, v1Cam, v2Cam;
+	worldToCamera.multVecMatrix(v0, v0Cam);
+	worldToCamera.multVecMatrix(v1, v1Cam);
+	worldToCamera.multVecMatrix(v2, v2Cam);
+	Vec3f n = (v1Cam - v0Cam).crossProduct(v2Cam - v0Cam).normalize();
+
+	float v0Cam_xz = (v0Cam.x/-v0Cam.z);
+	float v0Cam_yz = (v0Cam.y/-v0Cam.z);
+	float v1Cam_xz = (v1Cam.x/-v1Cam.z);
+	float v1Cam_yz = (v1Cam.y/-v1Cam.z);
+	float v2Cam_xz = (v2Cam.x/-v2Cam.z);
+	float v2Cam_yz = (v2Cam.y/-v2Cam.z);		
+	
+	
 	uint32_t ylen = y1-y0, xlen = x1-x0;
 	Vec3f pp_x0y0(x0 + 0.5, y0 + 0.5, 0);
 	
@@ -301,10 +313,6 @@ int main(int argc, char **argv)
 	
         for (uint32_t yy = 0; yy <= ylen; yy++) {
 	  uint32_t y = y0 + yy;
-	  
-	  Vec3f pp(x0 + 0.5, y + 0.5, 0);
-	  
-
 	  float w0_ = w0_x0, w1_ = w1_x0, w2_ = w2_x0;
 	  
 	  for (uint32_t xx = 0; xx <= xlen; xx++) {
@@ -315,33 +323,33 @@ int main(int argc, char **argv)
 	    if ((w0 >= 0 && w1 >= 0 && w2 >= 0)) {
 	      incr_count(&n_passed_area,1UL);
 	      
-	      float recip_area = 1.0f / area;
 	      w0 *= recip_area;
 	      w1 *= recip_area;
 	      w2 *= recip_area;
-
-	      float oneOverZ = v0Raster.z * w0 + v1Raster.z * w1 + v2Raster.z * w2;
-	      float z = 1.0f / oneOverZ;
-
-	      bool failedZ = false;
-	      uint32_t uNewZ = *reinterpret_cast<uint32_t*>(&z);
-		    
-	      while(1) {
-		float old_z = depthBuffer[y * imageWidth + x];
-		if(z >= old_z) {
-		  failedZ = true;
-		  break;
-		}
-		uint32_t uOldZ = *reinterpret_cast<uint32_t*>(&depthBuffer[y * imageWidth + x]);
-		if(__sync_bool_compare_and_swap(reinterpret_cast<uint32_t*>(&depthBuffer[y * imageWidth + x]), uOldZ, uNewZ)) {
-		  break;
-		}
+	      //3 mults
+	      
+	      float z = 1.0f / (v0Raster.z * w0 + v1Raster.z * w1 + v2Raster.z * w2);
+	      //1 recip, 6 mults, 2 adds
+	      
+	      bool failedZ = true;
+	      if(depthBuffer[y * imageWidth + x] > z) {
+		depthBuffer[y * imageWidth + x] = z;
+		failedZ = false;
 	      }
 	      
 	      if(not(failedZ)) {
 		incr_count(&n_passed_z, 1UL);
-		Vec2f st = st0 * w0 + st1 * w1 + st2 * w2;
-		st *= z;
+		Vec2f st;
+		float w0z = w0*z, w1z = w1*z, w2z = w2*z;
+		//1 compare, 1 recip, 9 mults, 2 adds
+		
+		st.x = (st0.x * w0z) + (st1.x * w1z) + (st2.x * w2z);
+		//1 compare, 1 recip, 12 mults, 4 adds
+		
+		st.y = (st0.y * w0z) + (st1.y * w1z) + (st2.y * w2z);
+		//1 compare, 1 recip, 15 mults, 6 adds
+
+		
 		// [comment]
 		// If you need to compute the actual position of the shaded
 		// point in camera space. Proceed like with the other vertex attribute.
@@ -349,16 +357,13 @@ int main(int argc, char **argv)
 		// interpolate using barycentric coordinates and finally multiply
 		// by sample depth.
 		// [/comment]
-		Vec3f v0Cam, v1Cam, v2Cam;
-		worldToCamera.multVecMatrix(v0, v0Cam);
-		worldToCamera.multVecMatrix(v1, v1Cam);
-		worldToCamera.multVecMatrix(v2, v2Cam);
                         
-		float px = (v0Cam.x/-v0Cam.z) * w0 + (v1Cam.x/-v1Cam.z) * w1 + (v2Cam.x/-v2Cam.z) * w2;
-		float py = (v0Cam.y/-v0Cam.z) * w0 + (v1Cam.y/-v1Cam.z) * w1 + (v2Cam.y/-v2Cam.z) * w2;
-                        
-		Vec3f pt(px * z, py * z, -z); // pt is in camera space
-                        
+		float px = v0Cam_xz * w0 + v1Cam_xz * w1 + v2Cam_xz * w2;
+		//1 compare, 1 recip, 18 mults, 8 adds
+		
+		float py = v0Cam_yz * w0 + v1Cam_yz * w1 + v2Cam_yz * w2;
+		//1 compare, 1 recip, 21 mults, 10 adds
+		
 		// [comment]
 		// Compute the face normal which is used for a simple facing ratio.
 		// Keep in mind that we are doing all calculation in camera space.
@@ -366,12 +371,24 @@ int main(int argc, char **argv)
 		// in camera space minus Vec3f(0), the position of the camera in camera
 		// space.
 		// [/comment]
-		Vec3f n = (v1Cam - v0Cam).crossProduct(v2Cam - v0Cam);
-		n.normalize();
-		Vec3f viewDirection = -pt;
-		viewDirection.normalize();
-                        
-		float nDotView =  std::max(0.f, n.dotProduct(viewDirection));
+		Vec3f viewDirection(-px * z, -py * z, z); // pt is in camera space;
+		//1 compare, 1 recip, 20 mults, 8 adds
+		
+		float t = viewDirection[0]*viewDirection[0] +
+		  viewDirection[1]*viewDirection[1] +
+		  viewDirection[2]*viewDirection[2];
+		//1 compare, 1 recip, 23 mults, 10 adds
+
+	      
+		float t_recip = 1.0/std::sqrt(t);
+		viewDirection[0] *= t_recip;
+		viewDirection[1] *= t_recip;
+		viewDirection[2] *= t_recip;
+		//1 compare, 1 recip, 1 recip sqrt, 26 mults, 10 adds		
+
+		float nDotView = n[0]*viewDirection[0] + n[1]*viewDirection[1] + n[2]*viewDirection[2];
+		nDotView = std::max(0.0f, nDotView);
+		//1 compare, 1 recip, 1 recip sqrt, 29 mults, 12 adds				
                         
 		// [comment]
 		// The final color is the reuslt of the faction ration multiplied by the
