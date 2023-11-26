@@ -54,6 +54,11 @@ struct pixel_t {
   uint8_t a;
 };
 
+template<typename T>
+void incr_count(T *ptr, T amt) {
+  *ptr += amt;
+}
+
 //[comment]
 // Compute screen coordinates based on a physically-based camera model
 // http://www.scratchapixel.com/lessons/3d-basic-rendering/3d-viewing-pinhole-camera
@@ -171,12 +176,8 @@ const Matrix44f worldToCamera = {
 const uint32_t ntris = (sizeof(stindices)/sizeof(stindices[0]))/3;
 							 
 
-const float nearClippingPLane = 1;
-const float farClippingPLane = 1000;
-float focalLength = 20; // in mm
-// 35mm Full Aperture in inches
-float filmApertureWidth = 0.980;
-float filmApertureHeight = 0.735;
+const float nearClippingPLane = 1.0f, farClippingPLane = 1000.0f;
+float filmApertureWidth = 0.980f, filmApertureHeight = 0.735f, focalLength = 20; // in mm;
 
 int main(int argc, char **argv)
 {
@@ -191,38 +192,43 @@ int main(int argc, char **argv)
   sdlscr = SDL_GetWindowSurface(sdlwin);
   assert(sdlscr);
 
-    Matrix44f cameraToWorld = worldToCamera.inverse();
-
-    static_assert(ntris == 3156, "huh");
+  Matrix44f cameraToWorld = worldToCamera.inverse();
+  
     
-    // compute screen coordinates
-    float t, b, l, r;
+  // compute screen coordinates
+  float t, b, l, r;
+  
+  computeScreenCoordinates(
+			   filmApertureWidth,
+			   filmApertureHeight,
+			   imageWidth,
+			   imageHeight,
+			   kOverscan,
+			   nearClippingPLane,
+			   focalLength,
+			   t, b, l, r);
     
-    computeScreenCoordinates(
-        filmApertureWidth, filmApertureHeight,
-        imageWidth, imageHeight,
-        kOverscan,
-        nearClippingPLane,
-        focalLength,
-        t, b, l, r);
     
-    // define the frame-buffer and the depth-buffer. Initialize depth buffer
-    // to far clipping plane.
-    Vec3<unsigned char> *frameBuffer = new Vec3<unsigned char>[imageWidth * imageHeight];
-    for (uint32_t i = 0; i < imageWidth * imageHeight; ++i) frameBuffer[i] = Vec3<unsigned char>(255);
     float *depthBuffer = new float[imageWidth * imageHeight];
-    for (uint32_t i = 0; i < imageWidth * imageHeight; ++i) depthBuffer[i] = farClippingPLane;
-
-    auto t_start = std::chrono::high_resolution_clock::now();
+    uint64_t n_tests = 0, n_passed_area = 0, n_passed_z = 0;
+    int n_frames = 0;
+    while(n_frames < 30) {
+      n_tests  = n_passed_area = n_passed_z = 0;
+      n_frames++;
+      for (uint32_t i = 0; i < imageWidth * imageHeight; ++i) {
+	depthBuffer[i] = farClippingPLane;
+      }
+      auto t_start = std::chrono::high_resolution_clock::now();
     
     // [comment]
     // Outer loop
     // [/comment]
-    //#pragma omp parallel for
-    uint64_t n_tests = 0, n_passed_area = 0, n_passed_z = 0;
+    //
+
     SDL_LockSurface(sdlscr);
     pixel_t *pxls = reinterpret_cast<pixel_t*>(sdlscr->pixels);
     
+    //#pragma omp parallel for
     for (uint32_t i = 0; i < ntris; ++i) {
         const Vec3f &v0 = vertices[nvertices[i * 3]];
         const Vec3f &v1 = vertices[nvertices[i * 3 + 1]];
@@ -239,9 +245,9 @@ int main(int argc, char **argv)
         // [comment]
         // Precompute reciprocal of vertex z-coordinate
         // [/comment]
-        v0Raster.z = 1 / v0Raster.z,
-        v1Raster.z = 1 / v1Raster.z,
-        v2Raster.z = 1 / v2Raster.z;
+        v0Raster.z = 1.0f / v0Raster.z,
+        v1Raster.z = 1.0f / v1Raster.z,
+        v2Raster.z = 1.0f / v2Raster.z;
         
         
         // [comment]
@@ -260,7 +266,8 @@ int main(int argc, char **argv)
         float ymax = max3(v0Raster.y, v1Raster.y, v2Raster.y);
         
         // the triangle is out of screen
-        if (xmin > imageWidth - 1 || xmax < 0 || ymin > imageHeight - 1 || ymax < 0) continue;
+        if (xmin > (imageWidth - 1) || xmax < 0 || ymin > (imageHeight - 1) || ymax < 0)
+	  continue;
 
         // be careful xmin/xmax/ymin/ymax can be negative. Don't cast to uint32_t
         uint32_t x0 = std::max(int32_t(0), (int32_t)(std::floor(xmin)));
@@ -273,34 +280,41 @@ int main(int argc, char **argv)
         // [comment]
         // Inner loop
         // [/comment]
-	uint32_t ylen = y1-y0;
-	uint32_t xlen = x1-x0;
+	uint32_t ylen = y1-y0, xlen = x1-x0;
+	Vec3f pp_x0y0(x0 + 0.5, y0 + 0.5, 0);
+	
+	float l0_dy = v2Raster[1] - v1Raster[1];
+	float l1_dy = v0Raster[1] - v2Raster[1];
+	float l2_dy = v1Raster[1] - v0Raster[1];
+
+	float l0_dx = v2Raster[0] - v1Raster[0];
+	float l1_dx = v0Raster[0] - v2Raster[0];
+	float l2_dx = v1Raster[0] - v0Raster[0];
+	
+	float w0_x0y0 = (pp_x0y0[0]-v1Raster[0])*l0_dy - (pp_x0y0[1]-v1Raster[1])*l0_dx;
+	float w1_x0y0 = (pp_x0y0[0]-v2Raster[0])*l1_dy - (pp_x0y0[1]-v2Raster[1])*l1_dx;
+	float w2_x0y0 = (pp_x0y0[0]-v0Raster[0])*l2_dy - (pp_x0y0[1]-v0Raster[1])*l2_dx;
+
+	float w0_x0 = w0_x0y0;
+	float w1_x0 = w1_x0y0;
+	float w2_x0 = w2_x0y0;
+	
         for (uint32_t yy = 0; yy <= ylen; yy++) {
 	  uint32_t y = y0 + yy;
-
+	  
 	  Vec3f pp(x0 + 0.5, y + 0.5, 0);
 	  
-	  float l0_dy = v2Raster[1] - v1Raster[1];
-	  float l1_dy = v0Raster[1] - v2Raster[1];
-	  float l2_dy = v1Raster[1] - v0Raster[1];
-	  
-	  float l0_dx = v2Raster[0] - v1Raster[0];
-	  float l1_dx = v0Raster[0] - v2Raster[0];
-	  float l2_dx = v1Raster[0] - v0Raster[0];
-
-	  float w0_x0 = (pp[0]-v1Raster[0])*l0_dy - (pp[1]-v1Raster[1])*l0_dx;
-	  float w1_x0 = (pp[0]-v2Raster[0])*l1_dy - (pp[1]-v2Raster[1])*l1_dx;
-	  float w2_x0 = (pp[0]-v0Raster[0])*l2_dy - (pp[1]-v0Raster[1])*l2_dx;
 
 	  float w0_ = w0_x0, w1_ = w1_x0, w2_ = w2_x0;
 	  
 	  for (uint32_t xx = 0; xx <= xlen; xx++) {
 	    uint32_t x = x0 + xx;
 	    float w0 = w0_, w1 = w1_, w2 = w2_;
-	    ++n_tests;
+	    incr_count(&n_tests,1UL);
 	    
 	    if ((w0 >= 0 && w1 >= 0 && w2 >= 0)) {
-	      ++n_passed_area;
+	      incr_count(&n_passed_area,1UL);
+	      
 	      float recip_area = 1.0f / area;
 	      w0 *= recip_area;
 	      w1 *= recip_area;
@@ -325,7 +339,7 @@ int main(int argc, char **argv)
 	      }
 	      
 	      if(not(failedZ)) {
-		n_passed_z++;
+		incr_count(&n_passed_z, 1UL);
 		Vec2f st = st0 * w0 + st1 * w1 + st2 * w2;
 		st *= z;
 		// [comment]
@@ -368,12 +382,6 @@ int main(int argc, char **argv)
 		float c = 0.3 * (1 - checker) + 0.7 * checker;
 		nDotView *= c;
 
-		
-		frameBuffer[y * imageWidth + x].x = nDotView * 255;
-		frameBuffer[y * imageWidth + x].y = nDotView * 255;
-		frameBuffer[y * imageWidth + x].z = nDotView * 255;
-
-		
 		pxls[y * imageWidth + x].r = nDotView * 255;
 		pxls[y * imageWidth + x].g = nDotView * 255;
 		pxls[y * imageWidth + x].b = nDotView * 255;		
@@ -384,6 +392,10 @@ int main(int argc, char **argv)
 	    w1_ += l1_dy;
 	    w2_ += l2_dy;
 	  }
+
+	  w0_x0 -= l0_dx;
+	  w1_x0 -= l1_dx;
+	  w2_x0 -= l2_dx;
         }
     }
     SDL_UnlockSurface(sdlscr);
@@ -392,22 +404,12 @@ int main(int argc, char **argv)
     std::cout << "n_tests        = " << n_tests << "\n";
     std::cout << "n_passed_area  = " << n_passed_area << "\n";
     std::cout << "n_passed_z     = " << n_passed_z << "\n";
-    
+    std::cout << static_cast<double>(n_passed_area)/ntris << " pixels per triange\n";
     auto t_end = std::chrono::high_resolution_clock::now();
     auto passedTime = std::chrono::duration<double, std::milli>(t_end - t_start).count();
     std::cerr << "Wall passed time:  " << passedTime << " ms" << std::endl;
-    
-    sleep(1);
-    // [comment]
-    // Store the result of the framebuffer to a PPM file (Photoshop reads PPM files).
-    // [/comment]
-    std::ofstream ofs;
-    ofs.open("./output.ppm");
-    ofs << "P6\n" << imageWidth << " " << imageHeight << "\n255\n";
-    ofs.write((char*)frameBuffer, imageWidth * imageWidth * 3);
-    ofs.close();
-    
-    delete [] frameBuffer;
+    }
+
     delete [] depthBuffer;
 
 
