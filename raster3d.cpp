@@ -179,8 +179,30 @@ const uint32_t ntris = (sizeof(stindices)/sizeof(stindices[0]))/3;
 const float nearClippingPLane = 1.0f, farClippingPLane = 1000.0f;
 float filmApertureWidth = 0.980f, filmApertureHeight = 0.735f, focalLength = 20; // in mm;
 
+
+#define print_var(x) {std::cout << #x << " = " << x << "\n";}
+
+struct tri {
+  float l0_dy;
+  float l1_dy;
+  float l2_dy;
+  float l0_dx;
+  float l1_dx;
+  float l2_dx;
+  float w0_x0y0;
+  float w1_x0y0;
+  float w2_x0y0;	  
+  uint32_t y0;
+  uint32_t y1;
+  uint32_t x0;
+  uint32_t x1;
+} __attribute__((packed));
+
+
+
 int main(int argc, char **argv)
 {
+  print_var(sizeof(tri));
 
   sdlwin = SDL_CreateWindow("FRAMEBUFFER",
 			    SDL_WINDOWPOS_UNDEFINED,
@@ -212,7 +234,9 @@ int main(int argc, char **argv)
     float *depthBuffer = new float[imageWidth * imageHeight];
     uint64_t n_tests = 0, n_passed_area = 0, n_passed_z = 0;
     int n_frames = 0;
-    while(n_frames < 30) {
+    FILE *fp = fopen("trianges.bin", "wb");
+    assert(fp);
+    while(n_frames < 1) {
       n_tests  = n_passed_area = n_passed_z = 0;
       n_frames++;
       
@@ -310,7 +334,23 @@ int main(int argc, char **argv)
 	float w0_x0 = w0_x0y0;
 	float w1_x0 = w1_x0y0;
 	float w2_x0 = w2_x0y0;
-	
+
+	tri t;
+	t.l0_dy = l0_dy;
+	t.l1_dy = l1_dy;
+	t.l2_dy = l2_dy;
+	t.l0_dx = l0_dx;
+	t.l1_dx = l1_dx;
+	t.l2_dx = l2_dx;
+	t.w0_x0y0 = w0_x0y0;
+	t.w1_x0y0 = w0_x0y0;
+	t.w2_x0y0 = w0_x0y0;
+	t.y0 = y0;
+	t.y1 = y1;
+	t.x0 = x0;
+	t.x1 = x1;	
+	fwrite(reinterpret_cast<void*>(&t), sizeof(t), 1, fp);
+
         for (uint32_t yy = 0; yy <= ylen; yy++) {
 	  uint32_t y = y0 + yy;
 	  float w0_ = w0_x0, w1_ = w1_x0, w2_ = w2_x0;
@@ -426,6 +466,7 @@ int main(int argc, char **argv)
     auto passedTime = std::chrono::duration<double, std::milli>(t_end - t_start).count();
     std::cerr << "Wall passed time:  " << passedTime << " ms" << std::endl;
     }
+    fclose(fp);
 
     delete [] depthBuffer;
 
