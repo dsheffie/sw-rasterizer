@@ -59,6 +59,17 @@ void incr_count(T *ptr, T amt) {
   *ptr += amt;
 }
 
+inline float recip_estimate(float a) {
+  float x = 1.0f, d = 0.0f;
+  for(int i = 0; i < 3; i++) {
+    float xp = x * (2.0f - a*x);
+    d = (x-xp);
+    d = (d < 0.0f) ? -d : d;
+    x = xp;
+  }
+  return x;
+}
+
 //[comment]
 // Compute screen coordinates based on a physically-based camera model
 // http://www.scratchapixel.com/lessons/3d-basic-rendering/3d-viewing-pinhole-camera
@@ -217,7 +228,7 @@ int main(int argc, char **argv)
       n_frames++;
       
       for (uint32_t i = 0; i < imageWidth * imageHeight; ++i) {
-	depthBuffer[i] = farClippingPLane;
+	depthBuffer[i] = 1.0 / farClippingPLane;
       }
       auto t_start = std::chrono::high_resolution_clock::now();
     
@@ -327,17 +338,24 @@ int main(int argc, char **argv)
 	      w1 *= recip_area;
 	      w2 *= recip_area;
 	      //3 mults
+
+	      float z_inv = v0Raster.z * w0 + v1Raster.z * w1 + v2Raster.z * w2;	      
+
+
+	      //float z = 1.0f / (z_inv);
 	      
-	      float z = 1.0f / (v0Raster.z * w0 + v1Raster.z * w1 + v2Raster.z * w2);
 	      //1 recip, 6 mults, 2 adds
 	      
 	      bool failedZ = true;
-	      if(depthBuffer[y * imageWidth + x] > z) {
-		depthBuffer[y * imageWidth + x] = z;
+
+	      
+	      if(depthBuffer[y * imageWidth + x] < z_inv) {
+		depthBuffer[y * imageWidth + x] = z_inv;
 		failedZ = false;
 	      }
 	      
 	      if(not(failedZ)) {
+		float z = 1.0f / z_inv;		
 		incr_count(&n_passed_z, 1UL);
 		Vec2f st;
 		float w0z = w0*z, w1z = w1*z, w2z = w2*z;

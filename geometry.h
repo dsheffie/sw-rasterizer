@@ -150,17 +150,16 @@ typedef Vec3<int> Vec3i;
 //
 // To use you can either write: Matrix44<float> m; or: Matrix44f m;
 //[/comment]
-template<typename T>
-class Matrix44
+class Matrix44f
 {
 public:
 
-    T x[4][4] = {{1,0,0,0},{0,1,0,0},{0,0,1,0},{0,0,0,1}};
+    float x[4][4] = {{1,0,0,0},{0,1,0,0},{0,0,1,0},{0,0,0,1}};
 
-    Matrix44() {}
+    Matrix44f() {}
 
-    Matrix44 (T a, T b, T c, T d, T e, T f, T g, T h,
-              T i, T j, T k, T l, T m, T n, T o, T p)
+    Matrix44f (float a, float b, float c, float d, float e, float f, float g, float h,
+	       float i, float j, float k, float l, float m, float n, float o, float p)
     {
         x[0][0] = a;
         x[0][1] = b;
@@ -180,17 +179,9 @@ public:
         x[3][3] = p;
     }
     
-    const T* operator [] (uint8_t i) const { return x[i]; }
-    T* operator [] (uint8_t i) { return x[i]; }
+    const float* operator [] (uint8_t i) const { return x[i]; }
+    float* operator [] (uint8_t i) { return x[i]; }
 
-    // Multiply the current matrix with another matrix (rhs)
-    Matrix44 operator * (const Matrix44& v) const
-    {
-        Matrix44 tmp;
-        multiply (*this, v, tmp);
-
-        return tmp;
-    }
 
     //[comment]
     // This method needs to be used for point-matrix multiplication. Keep in mind
@@ -205,21 +196,8 @@ public:
     // The coordinate w is more often than not equals to 1, but it can be different than
     // 1 especially when the matrix is projective matrix (perspective projection matrix).
     //[/comment]
-    template<typename S>
-    void multVecMatrix(const Vec3<S> &src, Vec3<S> &dst) const
-    {
-        S a, b, c, w;
-	
-        a = src[0] * x[0][0] + src[1] * x[1][0] + src[2] * x[2][0] + x[3][0];
-        b = src[0] * x[0][1] + src[1] * x[1][1] + src[2] * x[2][1] + x[3][1];
-        c = src[0] * x[0][2] + src[1] * x[1][2] + src[2] * x[2][2] + x[3][2];
-        w = src[0] * x[0][3] + src[1] * x[1][3] + src[2] * x[2][3] + x[3][3];
-        
-        dst.x = a / w;
-        dst.y = b / w;
-        dst.z = c / w;
-    }
-
+  void multVecMatrix(const Vec3<float> &src, Vec3<float> &dst) const;
+  
 
     //[comment]
     // Compute the inverse of the matrix using the Gauss-Jordan (or reduced row) elimination method.
@@ -230,97 +208,15 @@ public:
     // for doing what it's supposed to do. If you want to learn how this works though, check the lesson
     // on called Matrix Inverse in the "Mathematics and Physics of Computer Graphics" section.
     //[/comment]
-    Matrix44 inverse() const
-    {
-        int i, j, k;
-        Matrix44 s;
-        Matrix44 t (*this);
-        
-        // Forward elimination
-        for (i = 0; i < 3 ; i++) {
-            int pivot = i;
-            
-            T pivotsize = t[i][i];
-            
-            if (pivotsize < 0)
-                pivotsize = -pivotsize;
-                
-                for (j = i + 1; j < 4; j++) {
-                    T tmp = t[j][i];
-                    
-                    if (tmp < 0)
-                        tmp = -tmp;
-                        
-                        if (tmp > pivotsize) {
-                            pivot = j;
-                            pivotsize = tmp;
-                        }
-                }
-            
-            if (pivotsize == 0) {
-                // Cannot invert singular matrix
-                return Matrix44();
-            }
-            
-            if (pivot != i) {
-                for (j = 0; j < 4; j++) {
-                    T tmp;
-                    
-                    tmp = t[i][j];
-                    t[i][j] = t[pivot][j];
-                    t[pivot][j] = tmp;
-                    
-                    tmp = s[i][j];
-                    s[i][j] = s[pivot][j];
-                    s[pivot][j] = tmp;
-                }
-            }
-            
-            for (j = i + 1; j < 4; j++) {
-                T f = t[j][i] / t[i][i];
-                
-                for (k = 0; k < 4; k++) {
-                    t[j][k] -= f * t[i][k];
-                    s[j][k] -= f * s[i][k];
-                }
-            }
-        }
-        
-        // Backward substitution
-        for (i = 3; i >= 0; --i) {
-            T f;
-            
-            if ((f = t[i][i]) == 0) {
-                // Cannot invert singular matrix
-                return Matrix44();
-            }
-            
-            for (j = 0; j < 4; j++) {
-                t[i][j] /= f;
-                s[i][j] /= f;
-            }
-            
-            for (j = 0; j < i; j++) {
-                f = t[j][i];
-                
-                for (k = 0; k < 4; k++) {
-                    t[j][k] -= f * t[i][k];
-                    s[j][k] -= f * s[i][k];
-                }
-            }
-        }
-        
-        return s;
-    }
-
-    // \brief set current matrix to its inverse
-    const Matrix44<T>& invert()
-    {
-        *this = inverse();
-        return *this;
-    }
-
-    friend std::ostream& operator << (std::ostream &s, const Matrix44 &m)
+  Matrix44f inverse() const;
+  
+  // \brief set current matrix to its inverse
+  const Matrix44f & invert() {
+    *this = inverse();
+    return *this;
+  }
+  
+    friend std::ostream& operator << (std::ostream &s, const Matrix44f &m)
     {
         std::ios_base::fmtflags oldFlags = s.flags();
         int width = 12; // total with of the displayed number
@@ -352,5 +248,5 @@ public:
     }
 };
 
-typedef Matrix44<float> Matrix44f;
+
 
