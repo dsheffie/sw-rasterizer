@@ -1,4 +1,4 @@
-OBJ = raster3d.o Matrix44f.o
+OBJ = raster3d.o Matrix44f.o load_geometry.o
 EXE = raster3d
 CXXFLAGS = -MMD -O3 -std=c++11 -g
 CXX = g++

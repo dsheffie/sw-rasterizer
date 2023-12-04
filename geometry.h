@@ -248,5 +248,5 @@ public:
     }
 };
 
-
+bool loadGeoFile(const char *file, uint32_t &numFaces, Vec3f* &verts, Vec2f* &st, uint32_t* &vertsIndex);
 

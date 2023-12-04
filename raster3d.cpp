@@ -36,7 +36,7 @@
 #include <unistd.h>
 
 #include "geometry.h"
-#include "cow.h"
+//#include "cow.h"
 
 static const float inchToMm = 25.4;
 enum FitResolutionGate { kFill = 0, kOverscan };
@@ -53,6 +53,21 @@ struct pixel_t {
   uint8_t b;
   uint8_t a;
 };
+
+union uu {
+  float f32;
+  struct bits {
+    uint32_t f : 23;
+    uint32_t e : 8;
+    uint32_t s : 1;
+  } b;
+  uu(float f32) : f32(f32) {}
+};
+
+static int get_exp(float f) {
+  uu u(f);
+  return (static_cast<int>(u.b.e) - 127);
+}
 
 template<typename T>
 void incr_count(T *ptr, T amt) {
@@ -184,7 +199,7 @@ const Matrix44f worldToCamera = {
   -0.707107, -0.331295, 0.624695, 0,
   -1.63871, -5.747777, -40.400412, 1};
 
-const uint32_t ntris = (sizeof(stindices)/sizeof(stindices[0]))/3;
+//const uint32_t ntris = (sizeof(stindices)/sizeof(stindices[0]))/3;
 							 
 
 const float nearClippingPLane = 1.0f, farClippingPLane = 1000.0f;
@@ -204,8 +219,14 @@ int main(int argc, char **argv)
   assert(sdlscr);
 
   Matrix44f cameraToWorld = worldToCamera.inverse();
+  uint32_t ntris = 0;
+  Vec3f *vertices = nullptr;
+  Vec2f * st= nullptr;
+  uint32_t * nvertices = nullptr;
+  bool rc = loadGeoFile("./cow.geo", ntris, vertices, st, nvertices);
+  assert(rc);
+
   
-    
   // compute screen coordinates
   float t, b, l, r;
   
@@ -266,9 +287,9 @@ int main(int argc, char **argv)
         // Prepare vertex attributes. Divde them by their vertex z-coordinate
         // (though we use a multiplication here because v.z = 1 / v.z)
         // [/comment]
-        Vec2f st0 = st[stindices[i * 3]];
-        Vec2f st1 = st[stindices[i * 3 + 1]];
-        Vec2f st2 = st[stindices[i * 3 + 2]];
+        Vec2f st0 = st[i * 3];
+        Vec2f st1 = st[i * 3 + 1];
+        Vec2f st2 = st[i * 3 + 2];
 
         st0 *= v0Raster.z, st1 *= v1Raster.z, st2 *= v2Raster.z;
     
@@ -340,11 +361,7 @@ int main(int argc, char **argv)
 	      //3 mults
 
 	      float z_inv = v0Raster.z * w0 + v1Raster.z * w1 + v2Raster.z * w2;	      
-
-
-	      //float z = 1.0f / (z_inv);
-	      
-	      //1 recip, 6 mults, 2 adds
+	      //6 mults, 2 adds
 	      
 	      bool failedZ = true;
 
@@ -392,7 +409,8 @@ int main(int argc, char **argv)
 		Vec3f viewDirection(-px * z, -py * z, z); // pt is in camera space;
 		//1 compare, 1 recip, 20 mults, 8 adds
 		
-		float t = viewDirection[0]*viewDirection[0] +
+		float t =
+		  viewDirection[0]*viewDirection[0] +
 		  viewDirection[1]*viewDirection[1] +
 		  viewDirection[2]*viewDirection[2];
 		//1 compare, 1 recip, 23 mults, 10 adds
@@ -412,10 +430,10 @@ int main(int argc, char **argv)
 		// The final color is the reuslt of the faction ration multiplied by the
 		// checkerboard pattern.
 		// [/comment]
-		const int M = 10;
-		float checker = (fmod(st.x * M, 1.0) > 0.5) ^ (fmod(st.y * M, 1.0) < 0.5);
-		float c = 0.3 * (1 - checker) + 0.7 * checker;
-		nDotView *= c;
+		//const int M = 10;
+		//float checker = (fmod(st.x * M, 1.0) > 0.5) ^ (fmod(st.y * M, 1.0) < 0.5);
+		//float c = 0.3 * (1 - checker) + 0.7 * checker;
+		//nDotView *= c;
 
 		pxls[y * imageWidth + x].r = nDotView * 255;
 		pxls[y * imageWidth + x].g = nDotView * 255;
@@ -446,7 +464,9 @@ int main(int argc, char **argv)
     }
 
     delete [] depthBuffer;
-
+    delete [] vertices;
+    delete [] st;
+    delete [] nvertices;
 
     SDL_DestroyWindow(sdlwin);
     SDL_Quit();
